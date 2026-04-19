@@ -76,7 +76,7 @@ export async function GET(request: Request) {
     `;
 
     const res = await fetch(
-      `https://googleads.googleapis.com/v16/customers/${CUSTOMER_ID}/googleAds:search`,
+      `https://googleads.googleapis.com/v23/customers/${CUSTOMER_ID}/googleAds:search`,
       {
         method: "POST",
         headers: {
