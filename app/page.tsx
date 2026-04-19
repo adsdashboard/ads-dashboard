@@ -149,6 +149,31 @@ export default function Dashboard() {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const menuRef = useRef<HTMLDivElement>(null);
 
+  const [plannedDailyBudget, setPlannedDailyBudget] = useState<string>("");
+  const [editingBudget, setEditingBudget] = useState(false);
+
+  function getPeriodDays(p: string): number {
+    const today = new Date();
+    if (p === "today") return 1;
+    if (p === "yesterday") return 1;
+    if (p === "prev3") return 3;
+    if (p === "prev4") return 4;
+    if (p === "prev5") return 5;
+    if (p === "prev7") return 7;
+    if (p === "last_week") return 7;
+    if (p === "this_month") return today.getDate();
+    if (p === "last_month") {
+      const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+      return lastMonth.getDate();
+    }
+    if (p.includes("|")) {
+      const [since, until] = p.split("|");
+      const diff = new Date(until).getTime() - new Date(since).getTime();
+      return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1);
+    }
+    return 7;
+  }
+
   const activePeriodLabel = PERIODS.find(p => p.key === period)?.label || "Personalizat";
 
   function getPeriodDates(p: string): string | null {
@@ -321,6 +346,57 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
+
+            {/* Daily budget cards */}
+            {(() => {
+              const days = getPeriodDays(period);
+              const dailyReal = days > 0 ? Math.round(summary.totalSpend / days) : 0;
+              const planned = parseInt(plannedDailyBudget) || 0;
+              const diff = dailyReal - planned;
+              const diffColor = diff > 0 ? "#4ADE80" : diff < 0 ? "#F87171" : "#6B6B8A";
+              const diffLabel = diff > 0 ? `+${diff.toLocaleString("ro-RO")} lei peste plan` : diff < 0 ? `${diff.toLocaleString("ro-RO")} lei sub plan` : "conform planului";
+              return (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+                  {/* Real daily budget */}
+                  <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      Buget mediu zilnic real <span style={{ color: "#3A3A5C" }}>({days} {days === 1 ? "zi" : "zile"})</span>
+                    </div>
+                    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                      <div style={{ fontSize: 18, fontWeight: 600, color: "#E8E8F0", fontFamily: "'DM Mono', monospace" }}>
+                        {dailyReal.toLocaleString("ro-RO")} lei
+                      </div>
+                      {planned > 0 && (
+                        <div style={{ fontSize: 11, color: diffColor, fontFamily: "'DM Mono', monospace" }}>{diffLabel}</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Planned daily budget — editable */}
+                  <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px", cursor: "pointer" }} onClick={() => setEditingBudget(true)}>
+                    <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                      Buget mediu zilnic planificat <span style={{ color: "#6366f1", fontSize: 9 }}>✎ editabil</span>
+                    </div>
+                    {editingBudget ? (
+                      <input
+                        autoFocus
+                        type="number"
+                        value={plannedDailyBudget}
+                        onChange={e => setPlannedDailyBudget(e.target.value)}
+                        onBlur={() => setEditingBudget(false)}
+                        onKeyDown={e => e.key === "Enter" && setEditingBudget(false)}
+                        placeholder="ex: 1500"
+                        style={{ background: "transparent", border: "none", borderBottom: "1px solid #6366f1", color: "#E8E8F0", fontSize: 18, fontWeight: 600, fontFamily: "'DM Mono', monospace", outline: "none", width: "100%", padding: "0 0 2px 0" }}
+                      />
+                    ) : (
+                      <div style={{ fontSize: 18, fontWeight: 600, color: plannedDailyBudget ? "#A5B4FC" : "#2A2A4A", fontFamily: "'DM Mono', monospace" }}>
+                        {plannedDailyBudget ? `${parseInt(plannedDailyBudget).toLocaleString("ro-RO")} lei` : "click pentru a seta..."}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Alert */}
             {scalabile.length > 0 && (
