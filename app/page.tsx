@@ -25,6 +25,17 @@ type Campaign = {
 type SortKey = "name" | "spend" | "revenue" | "roas" | "purchases" | "objective" | "bidStrategy" | "attribution" | "status";
 type SortDir = "asc" | "desc";
 type Platform = "meta" | "google";
+type ActionType = "scale" | "reduce" | "stop";
+type CampaignActionRecord = { action: ActionType; date: string };
+
+const ACTION_CONFIG: Record<ActionType, { label: string; verb: string; color: string; bg: string; border: string }> = {
+  scale:  { label: "↑ Scalează", verb: "scalezi", color: "#4ADE80", bg: "#0A2E1E", border: "#4ADE8040" },
+  reduce: { label: "↓ Reduce",   verb: "reduci",  color: "#FBB024", bg: "#2E1E0A", border: "#FBB02440" },
+  stop:   { label: "■ Oprește",  verb: "oprești", color: "#F87171", bg: "#2E0A0A", border: "#F8717140" },
+};
+
+const COOLDOWN_MS = 3 * 24 * 60 * 60 * 1000;
+const LS_ACTIONS_KEY = "ads_campaign_actions";
 
 function getStatus(roas: number, status: string) {
   if (status === "ACTIVE" || status === "ENABLED") {
@@ -137,6 +148,48 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   );
 }
 
+function ActionModal({ campaign, action, onConfirm, onCancel }: {
+  campaign: Campaign; action: ActionType; onConfirm: () => void; onCancel: () => void;
+}) {
+  const cfg = ACTION_CONFIG[action];
+  return (
+    <div
+      onClick={onCancel}
+      style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{ background: "#0F0F1A", border: "1px solid #2A2A4A", borderRadius: 12, padding: "24px 28px", maxWidth: 420, width: "90%", boxShadow: "0 16px 48px rgba(0,0,0,0.8)" }}
+      >
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#E8E8F0", marginBottom: 10 }}>Confirmă acțiunea</div>
+        <div style={{ fontSize: 12, color: "#9090B0", marginBottom: 8, lineHeight: 1.6 }}>
+          Vrei să <span style={{ color: cfg.color, fontWeight: 600 }}>{cfg.verb}</span> campania:
+        </div>
+        <div style={{ padding: "8px 12px", background: "#1A1A2E", borderRadius: 6, color: "#D0D0E8", fontSize: 12, fontWeight: 500, marginBottom: 14, wordBreak: "break-word" }}>
+          {campaign.name}
+        </div>
+        <div style={{ fontSize: 11, color: "#4A4A6A", marginBottom: 20 }}>
+          Decizia va fi înregistrată local. Butoanele vor fi blocate 3 zile.
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            onClick={onCancel}
+            style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #2A2A4A", background: "transparent", color: "#9090B0", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            Anulează
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{ padding: "7px 16px", borderRadius: 7, border: `1px solid ${cfg.border}`, background: cfg.bg, color: cfg.color, fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}
+          >
+            {cfg.label}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [platform, setPlatform] = useState<Platform>("meta");
   const [period, setPeriod] = useState("prev7");
@@ -162,11 +215,17 @@ export default function Dashboard() {
   const [plannedBudgetDate, setPlannedBudgetDate] = useState<string>("");
   const [editingBudget, setEditingBudget] = useState(false);
 
+  const [campaignActions, setCampaignActions] = useState<Record<string, CampaignActionRecord>>({});
+  const [modal, setModal] = useState<{ campaign: Campaign; action: ActionType } | null>(null);
+
   useEffect(() => {
     const saved = localStorage.getItem("plannedDailyBudget");
     const savedDate = localStorage.getItem("plannedBudgetDate");
     if (saved) setPlannedDailyBudget(saved);
     if (savedDate) setPlannedBudgetDate(savedDate);
+
+    const savedActions = localStorage.getItem(LS_ACTIONS_KEY);
+    if (savedActions) setCampaignActions(JSON.parse(savedActions));
   }, []);
 
   function savePlannedBudget(value: string) {
@@ -176,6 +235,22 @@ export default function Dashboard() {
     setPlannedBudgetDate(now);
     localStorage.setItem("plannedBudgetDate", now);
   }
+
+  function confirmAction(campaignId: string, action: ActionType) {
+    const record: CampaignActionRecord = { action, date: new Date().toISOString() };
+    const updated = { ...campaignActions, [campaignId]: record };
+    setCampaignActions(updated);
+    localStorage.setItem(LS_ACTIONS_KEY, JSON.stringify(updated));
+    setModal(null);
+  }
+
+  function getCooldownDaysLeft(campaignId: string): number {
+    const rec = campaignActions[campaignId];
+    if (!rec) return 0;
+    const remaining = COOLDOWN_MS - (Date.now() - new Date(rec.date).getTime());
+    return remaining > 0 ? Math.ceil(remaining / (24 * 60 * 60 * 1000)) : 0;
+  }
+
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activePeriodLabel = PERIODS.find(p => p.key === period)?.label || "Personalizat";
@@ -324,6 +399,15 @@ export default function Dashboard() {
     <main style={{ fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", background: "#0A0A0F", color: "#E8E8F0", boxSizing: "border-box" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
+      {modal && (
+        <ActionModal
+          campaign={modal.campaign}
+          action={modal.action}
+          onConfirm={() => confirmAction(modal.campaign.id, modal.action)}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
       {/* Header */}
       <div style={{ borderBottom: "1px solid #1E1E2E", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -465,11 +549,59 @@ export default function Dashboard() {
                   const st = getStatus(c.roas, c.status);
                   const bs = badgeStyle(st.cls);
                   const thumbSlots = platform === "meta" ? Array.from({ length: 5 }, (_, i) => c.ads[i] || null) : [];
+                  const daysLeft = getCooldownDaysLeft(c.id);
+                  const lastAction = campaignActions[c.id];
                   return (
                     <div key={c.id} style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "8px 10px", background: "#0D0D1A", border: "1px solid #16162A", borderRadius: 7, marginBottom: 3, alignItems: "center" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 500, fontSize: 12, color: "#D0D0E8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.name}>{c.name}</div>
                         <div style={{ fontSize: 10, color: "#4A4A6A", marginTop: 1 }}>{c.sub}</div>
+                        {/* Action buttons */}
+                        <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                          {(["scale", "reduce", "stop"] as ActionType[]).map(act => {
+                            const cfg = ACTION_CONFIG[act];
+                            const disabled = daysLeft > 0;
+                            return (
+                              <button
+                                key={act}
+                                disabled={disabled}
+                                onClick={() => !disabled && setModal({ campaign: c, action: act })}
+                                title={disabled ? `Cooldown: mai ai ${daysLeft} ${daysLeft === 1 ? "zi" : "zile"}` : cfg.label}
+                                style={{
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  border: `1px solid ${disabled ? "#1E1E2E" : cfg.border}`,
+                                  background: disabled ? "transparent" : cfg.bg,
+                                  color: disabled ? "#2E2E4A" : cfg.color,
+                                  fontSize: 9,
+                                  fontWeight: 600,
+                                  cursor: disabled ? "not-allowed" : "pointer",
+                                  fontFamily: "inherit",
+                                  transition: "opacity 0.1s",
+                                }}
+                              >
+                                {cfg.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* Last action badge */}
+                        {lastAction && (() => {
+                          const cfg = ACTION_CONFIG[lastAction.action];
+                          const dateStr = new Date(lastAction.date).toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "2-digit" });
+                          return (
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 4 }}>
+                              <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: cfg.bg, color: cfg.color, border: `1px solid ${cfg.border}` }}>
+                                {cfg.label} · {dateStr}
+                              </span>
+                              {daysLeft > 0 && (
+                                <span style={{ fontSize: 9, color: "#3A3A5C" }}>
+                                  cooldown {daysLeft}z
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                       {platform === "meta" && (
                         <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
