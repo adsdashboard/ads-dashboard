@@ -393,6 +393,13 @@ export default function Dashboard() {
   const [scaleModal, setScaleModal] = useState<Campaign | null>(null);
   const [reduceModal, setReduceModal] = useState<Campaign | null>(null);
   const [stopModal, setStopModal] = useState<Campaign | null>(null);
+  const [unlockedAt, setUnlockedAt] = useState<Record<string, number>>({});
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem("plannedDailyBudget");
@@ -457,6 +464,12 @@ export default function Dashboard() {
       body: JSON.stringify({ campaignId: campaign.id, status: "PAUSED" }),
     });
     setStopModal(null);
+  }
+
+  function getUnlockSecondsLeft(campaignId: string): number {
+    const ts = unlockedAt[campaignId];
+    if (!ts) return 0;
+    return Math.max(0, 30 - Math.floor((Date.now() - ts) / 1000));
   }
 
   function getCooldownDaysLeft(campaignId: string): number {
@@ -760,10 +773,11 @@ export default function Dashboard() {
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 500, fontSize: 12, color: "#D0D0E8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.name}>{c.name}</div>
                         <div style={{ fontSize: 10, color: "#4A4A6A", marginTop: 1 }}>{c.sub}</div>
-                        <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: 4, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
                           {(["scale", "reduce", "stop"] as ActionType[]).map(act => {
                             const cfg = ACTION_CONFIG[act];
-                            const disabled = daysLeft > 0;
+                            const unlockLeft = getUnlockSecondsLeft(c.id);
+                            const disabled = daysLeft > 0 && unlockLeft === 0;
                             return (
                               <button
                                 key={act}
@@ -781,6 +795,20 @@ export default function Dashboard() {
                               </button>
                             );
                           })}
+                          {daysLeft > 0 && (() => {
+                            const unlockLeft = getUnlockSecondsLeft(c.id);
+                            return unlockLeft > 0 ? (
+                              <span style={{ fontSize: 9, color: "#FBB024", fontFamily: "monospace", marginLeft: 2, minWidth: 24 }}>{unlockLeft}s</span>
+                            ) : (
+                              <button
+                                onClick={() => setUnlockedAt(prev => ({ ...prev, [c.id]: Date.now() }))}
+                                title={`Deblochează temporar (30s) · cooldown ${daysLeft} ${daysLeft === 1 ? "zi" : "zile"}`}
+                                style={{ padding: "1px 5px", borderRadius: 4, border: "1px solid #1E1E2E", background: "transparent", fontSize: 10, cursor: "pointer", lineHeight: 1, color: "inherit" }}
+                              >
+                                🔓
+                              </button>
+                            );
+                          })()}
                         </div>
                         {lastAction && (() => {
                           const cfg = ACTION_CONFIG[lastAction.action];
