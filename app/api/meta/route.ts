@@ -63,7 +63,7 @@ export async function GET(request: Request) {
   try {
     // Fetch all campaigns with pagination
     const campsUrl = new URL(`https://graph.facebook.com/v19.0/act_${AD_ACCOUNT_ID}/campaigns`);
-    campsUrl.searchParams.set("fields", "id,name,status,objective,bid_strategy");
+    campsUrl.searchParams.set("fields", "id,name,status,objective,bid_strategy,daily_budget,created_time");
     campsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
     campsUrl.searchParams.set("limit", "200");
     const { data: campsAll, error: campsError } = await fetchAllPages(campsUrl);
@@ -138,6 +138,7 @@ export async function GET(request: Request) {
           }
         } catch { /* skip */ }
 
+        const dailyBudgetCents = parseInt(c.daily_budget || "0", 10);
         return {
           id: c.id,
           name: c.name,
@@ -146,6 +147,8 @@ export async function GET(request: Request) {
           revenue: Math.round(revenue),
           roas: Math.round(roas * 10) / 10,
           purchases,
+          dailyBudget: dailyBudgetCents > 0 ? Math.round(dailyBudgetCents / 100) : null,
+          createdTime: c.created_time || null,
           status: c.status,
           objective: c.objective || null,
           bidStrategy: c.bid_strategy || null,

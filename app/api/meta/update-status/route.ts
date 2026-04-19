@@ -5,17 +5,20 @@ const BASE_URL = "https://graph.facebook.com/v19.0";
 
 export async function POST(request: Request) {
   try {
-    const { campaignId, newBudget } = await request.json();
-    if (!campaignId || !newBudget) {
-      return NextResponse.json({ error: "Missing campaignId or newBudget" }, { status: 400 });
+    const { campaignId, status } = await request.json();
+    if (!campaignId || !status) {
+      return NextResponse.json({ error: "Missing campaignId or status" }, { status: 400 });
     }
 
-    const newBudgetCents = Math.round(parseFloat(newBudget) * 100);
+    const allowed = ["ACTIVE", "PAUSED"];
+    if (!allowed.includes(status)) {
+      return NextResponse.json({ error: "Invalid status" }, { status: 400 });
+    }
 
     const res: Response = await fetch(`${BASE_URL}/${campaignId}`, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ access_token: ACCESS_TOKEN!, daily_budget: String(newBudgetCents) }),
+      body: new URLSearchParams({ access_token: ACCESS_TOKEN!, status }),
     });
     const data = await res.json();
 
