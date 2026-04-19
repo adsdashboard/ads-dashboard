@@ -4,26 +4,62 @@ const AD_ACCOUNT_ID = process.env.NEXT_PUBLIC_META_AD_ACCOUNT_ID;
 const ACCESS_TOKEN = process.env.META_ACCESS_TOKEN;
 
 function getDateParams(period: string): Record<string, string> {
-  const today = new Date();
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
-  const daysAgo = (n: number) => { const d = new Date(today); d.setDate(d.getDate() - n); return d; };
+  const now = new Date();
+  // Use Bucharest timezone offset (UTC+3 in summer, UTC+2 in winter)
+  const bucharest = new Date(now.toLocaleString("en-US", { timeZone: "Europe/Bucharest" }));
+  
+  const fmt = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
 
+  const today = fmt(bucharest);
+  
+  const daysAgo = (n: number) => {
+    const d = new Date(bucharest);
+    d.setDate(d.getDate() - n);
+    return fmt(d);
+  };
+
+  // Always use explicit time_range — never date_preset which can be inconsistent
   switch (period) {
-    case "today":       return { date_preset: "today" };
-    case "yesterday":   return { date_preset: "yesterday" };
-    case "prev3":       return { time_range: JSON.stringify({ since: fmt(daysAgo(3)), until: fmt(daysAgo(1)) }) };
-    case "prev4":       return { time_range: JSON.stringify({ since: fmt(daysAgo(4)), until: fmt(daysAgo(1)) }) };
-    case "prev5":       return { time_range: JSON.stringify({ since: fmt(daysAgo(5)), until: fmt(daysAgo(1)) }) };
-    case "prev7":       return { time_range: JSON.stringify({ since: fmt(daysAgo(7)), until: fmt(daysAgo(1)) }) };
-    case "last_week":   return { date_preset: "last_week_mon_sun" };
-    case "this_month":  return { date_preset: "this_month" };
-    case "last_month":  return { date_preset: "last_month" };
+    case "today":
+      return { time_range: JSON.stringify({ since: today, until: today }) };
+    case "yesterday":
+      return { time_range: JSON.stringify({ since: daysAgo(1), until: daysAgo(1) }) };
+    case "prev3":
+      return { time_range: JSON.stringify({ since: daysAgo(3), until: daysAgo(1) }) };
+    case "prev4":
+      return { time_range: JSON.stringify({ since: daysAgo(4), until: daysAgo(1) }) };
+    case "prev5":
+      return { time_range: JSON.stringify({ since: daysAgo(5), until: daysAgo(1) }) };
+    case "prev7":
+      return { time_range: JSON.stringify({ since: daysAgo(7), until: daysAgo(1) }) };
+    case "last_week": {
+      // Monday to Sunday of last week
+      const day = bucharest.getDay(); // 0=Sun, 1=Mon...
+      const diffToLastMon = day === 0 ? 6 : day - 1 + 7;
+      const lastMon = daysAgo(diffToLastMon);
+      const lastSun = daysAgo(diffToLastMon - 6);
+      return { time_range: JSON.stringify({ since: lastMon, until: lastSun }) };
+    }
+    case "this_month": {
+      const firstDay = new Date(bucharest.getFullYear(), bucharest.getMonth(), 1);
+      return { time_range: JSON.stringify({ since: fmt(firstDay), until: today }) };
+    }
+    case "last_month": {
+      const firstDay = new Date(bucharest.getFullYear(), bucharest.getMonth() - 1, 1);
+      const lastDay = new Date(bucharest.getFullYear(), bucharest.getMonth(), 0);
+      return { time_range: JSON.stringify({ since: fmt(firstDay), until: fmt(lastDay) }) };
+    }
     default:
       if (period.includes("|")) {
         const [since, until] = period.split("|");
         return { time_range: JSON.stringify({ since, until }) };
       }
-      return { time_range: JSON.stringify({ since: fmt(daysAgo(7)), until: fmt(daysAgo(1)) }) };
+      return { time_range: JSON.stringify({ since: daysAgo(7), until: daysAgo(1) }) };
   }
 }
 
@@ -75,7 +111,6 @@ export async function GET(request: Request) {
 
         let ads: any[] = [];
         try {
-          // thumbnail_url si object_story_id in cereri separate ca sa nu se interfereze
           const adsUrl = buildUrl(`https://graph.facebook.com/v19.0/${c.id}/ads`, {
             fields: "id,name,creative{thumbnail_url,image_url,object_story_id},insights{spend,purchase_roas}",
             access_token: ACCESS_TOKEN!,
