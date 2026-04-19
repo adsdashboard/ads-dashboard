@@ -14,22 +14,24 @@ const PERIODS = [
 ];
 
 type Ad = { id: string; name: string; spend: number; roas: number; thumbnail: string | null; permalink: string | null };
-
 type Campaign = {
   id: string; name: string; sub: string;
   spend: number; revenue: number; roas: number;
   status: string; objective: string | null;
   bidStrategy: string | null; attribution: string | null;
   ads: Ad[];
+  platform?: string;
 };
-
 type SortKey = "name" | "spend" | "revenue" | "roas" | "objective" | "bidStrategy" | "attribution" | "status";
 type SortDir = "asc" | "desc";
+type Platform = "meta" | "google";
 
 function getStatus(roas: number, status: string) {
-  if (status === "ACTIVE" && roas >= 5) return { label: "Scalează", cls: "scale" };
-  if (status === "ACTIVE" && roas >= 4) return { label: "Monitorizare", cls: "watch" };
-  if (status === "ACTIVE") return { label: "Activ", cls: "test" };
+  if (status === "ACTIVE" || status === "ENABLED") {
+    if (roas >= 5) return { label: "Scalează", cls: "scale" };
+    if (roas >= 4) return { label: "Monitorizare", cls: "watch" };
+    return { label: "Activ", cls: "test" };
+  }
   if (roas >= 5) return { label: "Scalează", cls: "scale" };
   if (roas >= 4) return { label: "Monitorizare", cls: "watch" };
   if (roas > 0) return { label: "Oprește", cls: "pause" };
@@ -135,22 +137,58 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 export default function Dashboard() {
+  const [platform, setPlatform] = useState<Platform>("meta");
   const [period, setPeriod] = useState("prev7");
   const [customFrom, setCustomFrom] = useState("");
   const [customTo, setCustomTo] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
-  const [campaigns, setCampaigns] = useState<Campaign[]>([]);
-  const [summary, setSummary] = useState({ totalSpend: 0, totalRevenue: 0, totalRoas: 0, eligible: 0 });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [filter, setFilter] = useState<"all" | "active" | "paused">("active");
+
+  const [metaCampaigns, setMetaCampaigns] = useState<Campaign[]>([]);
+  const [metaSummary, setMetaSummary] = useState({ totalSpend: 0, totalRevenue: 0, totalRoas: 0, eligible: 0 });
+  const [metaLoading, setMetaLoading] = useState(true);
+  const [metaError, setMetaError] = useState("");
+
+  const [googleCampaigns, setGoogleCampaigns] = useState<Campaign[]>([]);
+  const [googleSummary, setGoogleSummary] = useState({ totalSpend: 0, totalRevenue: 0, totalRoas: 0, eligible: 0 });
+  const [googleLoading, setGoogleLoading] = useState(true);
+  const [googleError, setGoogleError] = useState("");
+
+  const [filter, setFilter] = useState<"active" | "paused" | "all">("active");
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const menuRef = useRef<HTMLDivElement>(null);
-
   const [plannedDailyBudget, setPlannedDailyBudget] = useState<string>("");
   const [editingBudget, setEditingBudget] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const activePeriodLabel = PERIODS.find(p => p.key === period)?.label || "Personalizat";
+
+  function getPeriodDates(p: string): string | null {
+    const fmt = (d: Date) => d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const today = new Date();
+    const daysAgo = (n: number) => { const d = new Date(today); d.setDate(d.getDate() - n); return d; };
+    if (p.includes("|")) return `${p.split("|")[0]} → ${p.split("|")[1]}`;
+    switch (p) {
+      case "today":      return fmt(today);
+      case "yesterday":  return fmt(daysAgo(1));
+      case "prev3":      return `${fmt(daysAgo(3))} → ${fmt(daysAgo(1))}`;
+      case "prev4":      return `${fmt(daysAgo(4))} → ${fmt(daysAgo(1))}`;
+      case "prev5":      return `${fmt(daysAgo(5))} → ${fmt(daysAgo(1))}`;
+      case "prev7":      return `${fmt(daysAgo(7))} → ${fmt(daysAgo(1))}`;
+      case "last_week": {
+        const mon = new Date(today); mon.setDate(today.getDate() - today.getDay() - 6);
+        const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+        return `${fmt(mon)} → ${fmt(sun)}`;
+      }
+      case "this_month": return `${fmt(new Date(today.getFullYear(), today.getMonth(), 1))} → ${fmt(today)}`;
+      case "last_month": {
+        const s = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const e = new Date(today.getFullYear(), today.getMonth(), 0);
+        return `${fmt(s)} → ${fmt(e)}`;
+      }
+      default: return null;
+    }
+  }
 
   function getPeriodDays(p: string): number {
     const today = new Date();
@@ -162,54 +200,12 @@ export default function Dashboard() {
     if (p === "prev7") return 7;
     if (p === "last_week") return 7;
     if (p === "this_month") return today.getDate();
-    if (p === "last_month") {
-      const lastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-      return lastMonth.getDate();
-    }
+    if (p === "last_month") return new Date(today.getFullYear(), today.getMonth(), 0).getDate();
     if (p.includes("|")) {
       const [since, until] = p.split("|");
-      const diff = new Date(until).getTime() - new Date(since).getTime();
-      return Math.max(1, Math.round(diff / (1000 * 60 * 60 * 24)) + 1);
+      return Math.max(1, Math.round((new Date(until).getTime() - new Date(since).getTime()) / (1000 * 60 * 60 * 24)) + 1);
     }
     return 7;
-  }
-
-  const activePeriodLabel = PERIODS.find(p => p.key === period)?.label || "Personalizat";
-
-  function getPeriodDates(p: string): string | null {
-    const fmt = (d: Date) => d.toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const today = new Date();
-    const daysAgo = (n: number) => { const d = new Date(today); d.setDate(d.getDate() - n); return d; };
-
-    if (p.includes("|")) {
-      const [since, until] = p.split("|");
-      return `${since} → ${until}`;
-    }
-    switch (p) {
-      case "today":      return fmt(today);
-      case "yesterday":  return fmt(daysAgo(1));
-      case "prev3":      return `${fmt(daysAgo(3))} → ${fmt(daysAgo(1))}`;
-      case "prev4":      return `${fmt(daysAgo(4))} → ${fmt(daysAgo(1))}`;
-      case "prev5":      return `${fmt(daysAgo(5))} → ${fmt(daysAgo(1))}`;
-      case "prev7":      return `${fmt(daysAgo(7))} → ${fmt(daysAgo(1))}`;
-      case "last_week": {
-        const mon = new Date(today);
-        mon.setDate(today.getDate() - today.getDay() - 6);
-        const sun = new Date(mon);
-        sun.setDate(mon.getDate() + 6);
-        return `${fmt(mon)} → ${fmt(sun)}`;
-      }
-      case "this_month": {
-        const start = new Date(today.getFullYear(), today.getMonth(), 1);
-        return `${fmt(start)} → ${fmt(today)}`;
-      }
-      case "last_month": {
-        const start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-        const end = new Date(today.getFullYear(), today.getMonth(), 0);
-        return `${fmt(start)} → ${fmt(end)}`;
-      }
-      default: return null;
-    }
   }
 
   const activePeriodDates = getPeriodDates(period);
@@ -222,58 +218,85 @@ export default function Dashboard() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  function fetchData(p: string) {
-    setLoading(true); setError("");
+  function fetchMeta(p: string) {
+    setMetaLoading(true); setMetaError("");
     fetch(`/api/meta?period=${encodeURIComponent(p)}`)
       .then(r => r.json())
       .then(data => {
-        if (data.error) { setError(data.error); setLoading(false); return; }
-        setCampaigns(data.campaigns || []);
-        setSummary({ totalSpend: data.totalSpend, totalRevenue: data.totalRevenue, totalRoas: data.totalRoas, eligible: data.eligible });
-        setLoading(false);
+        if (data.error) { setMetaError(data.error); setMetaLoading(false); return; }
+        setMetaCampaigns(data.campaigns || []);
+        setMetaSummary({ totalSpend: data.totalSpend, totalRevenue: data.totalRevenue, totalRoas: data.totalRoas, eligible: data.eligible });
+        setMetaLoading(false);
       })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .catch(e => { setMetaError(e.message); setMetaLoading(false); });
+  }
+
+  function fetchGoogle(p: string) {
+    setGoogleLoading(true); setGoogleError("");
+    fetch(`/api/google?period=${encodeURIComponent(p)}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setGoogleError(data.error); setGoogleLoading(false); return; }
+        setGoogleCampaigns(data.campaigns || []);
+        setGoogleSummary({ totalSpend: data.totalSpend, totalRevenue: data.totalRevenue, totalRoas: data.totalRoas, eligible: data.eligible });
+        setGoogleLoading(false);
+      })
+      .catch(e => { setGoogleError(e.message); setGoogleLoading(false); });
   }
 
   useEffect(() => {
-    if (!period.includes("|") && period !== "custom") fetchData(period);
+    if (!period.includes("|") && period !== "custom") {
+      fetchMeta(period);
+      fetchGoogle(period);
+    }
   }, [period]);
 
   function applyCustom() {
     if (!customFrom || !customTo) return;
     const key = `${customFrom}|${customTo}`;
     setShowCustom(false); setShowPeriodMenu(false);
-    setPeriod(key); fetchData(key);
+    setPeriod(key);
+    fetchMeta(key);
+    fetchGoogle(key);
   }
 
   function handleSort(key: SortKey) {
-    if (sortKey === key) {
-      setSortDir(d => d === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir("desc");
-    }
+    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
+    else { setSortKey(key); setSortDir("desc"); }
   }
 
-  const filtered = campaigns.filter(c => {
-    if (filter === "active") return c.status === "ACTIVE";
-    if (filter === "paused") return c.status === "PAUSED";
-    return true;
-  });
+  const campaigns = platform === "meta" ? metaCampaigns : googleCampaigns;
+  const summary = platform === "meta" ? metaSummary : googleSummary;
+  const loading = platform === "meta" ? metaLoading : googleLoading;
+  const error = platform === "meta" ? metaError : googleError;
 
-  const sorted = sortCampaigns(filtered, sortKey, sortDir);
-  const activeCamps = campaigns.filter(c => c.status === "ACTIVE");
+  const isActive = (c: Campaign) => c.status === "ACTIVE" || c.status === "ENABLED";
+  const activeCamps = campaigns.filter(isActive);
   const scalabile = campaigns.filter(c => c.roas >= 5);
 
-  const COL = "minmax(0,2fr) 300px minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,110px) minmax(0,110px) minmax(0,100px) minmax(0,100px)";
+  const filtered = campaigns.filter(c => {
+    if (filter === "active") return isActive(c);
+    if (filter === "paused") return !isActive(c);
+    return true;
+  });
+  const sorted = sortCampaigns(filtered, sortKey, sortDir);
+
+  const days = getPeriodDays(period);
+  const dailyReal = days > 0 ? Math.round(summary.totalSpend / days) : 0;
+  const planned = parseInt(plannedDailyBudget) || 0;
+  const diff = dailyReal - planned;
+  const diffColor = diff > 0 ? "#4ADE80" : diff < 0 ? "#F87171" : "#6B6B8A";
+  const diffLabel = diff > 0 ? `+${diff.toLocaleString("ro-RO")} lei peste plan` : diff < 0 ? `${diff.toLocaleString("ro-RO")} lei sub plan` : "conform planului";
+
+  const COL = platform === "meta"
+    ? "minmax(0,2fr) 300px minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,110px) minmax(0,110px) minmax(0,100px) minmax(0,100px)"
+    : "minmax(0,2fr) minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,110px) minmax(0,110px) minmax(0,100px)";
+
   const mono = { fontFamily: "'DM Mono', monospace" } as const;
 
   function ColHeader({ label, k, align = "right" }: { label: string; k: SortKey; align?: string }) {
     return (
-      <div
-        onClick={() => handleSort(k)}
-        style={{ textAlign: align as any, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start", gap: 2 }}
-      >
+      <div onClick={() => handleSort(k)} style={{ textAlign: align as any, cursor: "pointer", userSelect: "none", display: "flex", alignItems: "center", justifyContent: align === "right" ? "flex-end" : align === "center" ? "center" : "flex-start", gap: 2 }}>
         <span style={{ color: sortKey === k ? "#A5B4FC" : "#4A4A6A" }}>{label}</span>
         <SortIcon active={sortKey === k} dir={sortDir} />
       </div>
@@ -289,16 +312,26 @@ export default function Dashboard() {
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div style={{ width: 28, height: 28, borderRadius: 7, background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 600 }}>A</div>
           <span style={{ fontSize: 14, fontWeight: 600 }}>Ads Dashboard</span>
-          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#0F3D2E", color: "#4ADE80", border: "1px solid #1D9E7530" }}>● Live Meta</span>
+
+          {/* Platform tabs */}
+          <div style={{ display: "flex", gap: 4, marginLeft: 8 }}>
+            <button onClick={() => setPlatform("meta")} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid", borderColor: platform === "meta" ? "#1877F2" : "#1E1E2E", background: platform === "meta" ? "#1877F215" : "transparent", color: platform === "meta" ? "#60A5FA" : "#6B6B8A", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: platform === "meta" ? 600 : 400 }}>
+              f Meta
+            </button>
+            <button onClick={() => setPlatform("google")} style={{ padding: "4px 12px", borderRadius: 6, border: "1px solid", borderColor: platform === "google" ? "#EA4335" : "#1E1E2E", background: platform === "google" ? "#EA433515" : "transparent", color: platform === "google" ? "#F87171" : "#6B6B8A", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: platform === "google" ? 600 : 400 }}>
+              G Google
+            </button>
+          </div>
+
+          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#0F3D2E", color: "#4ADE80", border: "1px solid #1D9E7530" }}>● Live</span>
         </div>
 
+        {/* Period picker */}
         <div ref={menuRef} style={{ position: "relative" }}>
           <button onClick={() => setShowPeriodMenu(v => !v)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid #2A2A4A", background: "#0F0F1A", color: "#A5B4FC", fontSize: 12, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}>
             <span>📅</span>
             <span>{activePeriodLabel}</span>
-            {activePeriodDates && (
-              <span style={{ color: "#6B6B8A", fontSize: 11, borderLeft: "1px solid #2A2A4A", paddingLeft: 8 }}>{activePeriodDates}</span>
-            )}
+            {activePeriodDates && <span style={{ color: "#6B6B8A", fontSize: 11, borderLeft: "1px solid #2A2A4A", paddingLeft: 8 }}>{activePeriodDates}</span>}
             <span style={{ color: "#4A4A6A" }}>▾</span>
           </button>
           {showPeriodMenu && (
@@ -309,9 +342,7 @@ export default function Dashboard() {
                 </button>
               ))}
               <div style={{ borderTop: "1px solid #1E1E2E", marginTop: 6, paddingTop: 6 }}>
-                <button onClick={() => setShowCustom(v => !v)} style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 12px", borderRadius: 6, border: "none", background: "transparent", color: "#9090B0", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
-                  Personalizat ▸
-                </button>
+                <button onClick={() => setShowCustom(v => !v)} style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 12px", borderRadius: 6, border: "none", background: "transparent", color: "#9090B0", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Personalizat ▸</button>
                 {showCustom && (
                   <div style={{ padding: "8px 12px", display: "flex", flexDirection: "column", gap: 6 }}>
                     <input type="date" value={customFrom} onChange={e => setCustomFrom(e.target.value)} style={{ background: "#1A1A2E", border: "1px solid #2A2A4A", borderRadius: 6, color: "#E8E8F0", padding: "5px 8px", fontSize: 12, fontFamily: "inherit" }} />
@@ -326,8 +357,8 @@ export default function Dashboard() {
       </div>
 
       <div style={{ padding: "18px 24px", width: "100%", boxSizing: "border-box" }}>
-        {loading && <div style={{ textAlign: "center", padding: "60px 0", color: "#6B6B8A", fontSize: 13 }}>Se încarcă datele din Meta...</div>}
-        {error && <div style={{ padding: "12px 16px", background: "#3D0F0F", border: "1px solid #F8717130", borderRadius: 8, color: "#F87171", fontSize: 12, marginBottom: 16 }}>Eroare: {error}</div>}
+        {loading && <div style={{ textAlign: "center", padding: "60px 0", color: "#6B6B8A", fontSize: 13 }}>Se încarcă datele din {platform === "meta" ? "Meta" : "Google Ads"}...</div>}
+        {error && <div style={{ padding: "12px 16px", background: "#3D0F0F", border: "1px solid #F8717130", borderRadius: 8, color: "#F87171", fontSize: 12, marginBottom: 16 }}>Eroare {platform === "meta" ? "Meta" : "Google"}: {error}</div>}
 
         {!loading && !error && (
           <>
@@ -347,56 +378,30 @@ export default function Dashboard() {
               ))}
             </div>
 
-            {/* Daily budget cards */}
-            {(() => {
-              const days = getPeriodDays(period);
-              const dailyReal = days > 0 ? Math.round(summary.totalSpend / days) : 0;
-              const planned = parseInt(plannedDailyBudget) || 0;
-              const diff = dailyReal - planned;
-              const diffColor = diff > 0 ? "#4ADE80" : diff < 0 ? "#F87171" : "#6B6B8A";
-              const diffLabel = diff > 0 ? `+${diff.toLocaleString("ro-RO")} lei peste plan` : diff < 0 ? `${diff.toLocaleString("ro-RO")} lei sub plan` : "conform planului";
-              return (
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
-                  {/* Real daily budget */}
-                  <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px" }}>
-                    <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                      Buget mediu zilnic real <span style={{ color: "#3A3A5C" }}>({days} {days === 1 ? "zi" : "zile"})</span>
-                    </div>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-                      <div style={{ fontSize: 18, fontWeight: 600, color: "#E8E8F0", fontFamily: "'DM Mono', monospace" }}>
-                        {dailyReal.toLocaleString("ro-RO")} lei
-                      </div>
-                      {planned > 0 && (
-                        <div style={{ fontSize: 11, color: diffColor, fontFamily: "'DM Mono', monospace" }}>{diffLabel}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Planned daily budget — editable */}
-                  <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px", cursor: "pointer" }} onClick={() => setEditingBudget(true)}>
-                    <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                      Buget mediu zilnic planificat <span style={{ color: "#6366f1", fontSize: 9 }}>✎ editabil</span>
-                    </div>
-                    {editingBudget ? (
-                      <input
-                        autoFocus
-                        type="number"
-                        value={plannedDailyBudget}
-                        onChange={e => setPlannedDailyBudget(e.target.value)}
-                        onBlur={() => setEditingBudget(false)}
-                        onKeyDown={e => e.key === "Enter" && setEditingBudget(false)}
-                        placeholder="ex: 1500"
-                        style={{ background: "transparent", border: "none", borderBottom: "1px solid #6366f1", color: "#E8E8F0", fontSize: 18, fontWeight: 600, fontFamily: "'DM Mono', monospace", outline: "none", width: "100%", padding: "0 0 2px 0" }}
-                      />
-                    ) : (
-                      <div style={{ fontSize: 18, fontWeight: 600, color: plannedDailyBudget ? "#A5B4FC" : "#2A2A4A", fontFamily: "'DM Mono', monospace" }}>
-                        {plannedDailyBudget ? `${parseInt(plannedDailyBudget).toLocaleString("ro-RO")} lei` : "click pentru a seta..."}
-                      </div>
-                    )}
-                  </div>
+            {/* Daily budget */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 }}>
+              <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px" }}>
+                <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Buget mediu zilnic real <span style={{ color: "#3A3A5C" }}>({days} {days === 1 ? "zi" : "zile"})</span>
                 </div>
-              );
-            })()}
+                <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: "#E8E8F0", ...mono }}>{dailyReal.toLocaleString("ro-RO")} lei</div>
+                  {planned > 0 && <div style={{ fontSize: 11, color: diffColor, ...mono }}>{diffLabel}</div>}
+                </div>
+              </div>
+              <div style={{ background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 8, padding: "12px 14px", cursor: "pointer" }} onClick={() => setEditingBudget(true)}>
+                <div style={{ fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                  Buget mediu zilnic planificat <span style={{ color: "#6366f1", fontSize: 9 }}>✎ editabil</span>
+                </div>
+                {editingBudget ? (
+                  <input autoFocus type="number" value={plannedDailyBudget} onChange={e => setPlannedDailyBudget(e.target.value)} onBlur={() => setEditingBudget(false)} onKeyDown={e => e.key === "Enter" && setEditingBudget(false)} placeholder="ex: 1500" style={{ background: "transparent", border: "none", borderBottom: "1px solid #6366f1", color: "#E8E8F0", fontSize: 18, fontWeight: 600, ...mono, outline: "none", width: "100%", padding: "0 0 2px 0" }} />
+                ) : (
+                  <div style={{ fontSize: 18, fontWeight: 600, color: plannedDailyBudget ? "#A5B4FC" : "#2A2A4A", ...mono }}>
+                    {plannedDailyBudget ? `${parseInt(plannedDailyBudget).toLocaleString("ro-RO")} lei` : "click pentru a seta..."}
+                  </div>
+                )}
+              </div>
+            </div>
 
             {/* Alert */}
             {scalabile.length > 0 && (
@@ -420,34 +425,34 @@ export default function Dashboard() {
 
             {/* Table */}
             <div style={{ width: "100%", overflowX: "auto" }}>
-              {/* Header */}
-              <div style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "0 10px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", minWidth: 1200 }}>
+              <div style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "0 10px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", minWidth: platform === "meta" ? 1200 : 900 }}>
                 <ColHeader label="Campanie" k="name" align="left" />
-                <div style={{ color: "#4A4A6A" }}>Top 5 creative</div>
+                {platform === "meta" && <div style={{ color: "#4A4A6A" }}>Top 5 creative</div>}
                 <ColHeader label="Cheltuit" k="spend" align="right" />
                 <ColHeader label="Venituri" k="revenue" align="right" />
                 <ColHeader label="ROAS" k="roas" align="right" />
                 <ColHeader label="Obiectiv" k="objective" align="center" />
                 <ColHeader label="Bid strategy" k="bidStrategy" align="center" />
-                <ColHeader label="Attribution" k="attribution" align="center" />
+                {platform === "meta" && <ColHeader label="Attribution" k="attribution" align="center" />}
                 <ColHeader label="Status" k="status" align="right" />
               </div>
 
-              {/* Rows */}
-              <div style={{ minWidth: 1200 }}>
+              <div style={{ minWidth: platform === "meta" ? 1200 : 900 }}>
                 {sorted.map(c => {
                   const st = getStatus(c.roas, c.status);
                   const bs = badgeStyle(st.cls);
-                  const thumbSlots = Array.from({ length: 5 }, (_, i) => c.ads[i] || null);
+                  const thumbSlots = platform === "meta" ? Array.from({ length: 5 }, (_, i) => c.ads[i] || null) : [];
                   return (
-                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "8px 10px", background: "#0D0D1A", border: "1px solid #16162A", borderRadius: 7, marginBottom: 3, alignItems: "center", minWidth: 1200 }}>
+                    <div key={c.id} style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "8px 10px", background: "#0D0D1A", border: "1px solid #16162A", borderRadius: 7, marginBottom: 3, alignItems: "center" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontWeight: 500, fontSize: 12, color: "#D0D0E8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={c.name}>{c.name}</div>
                         <div style={{ fontSize: 10, color: "#4A4A6A", marginTop: 1 }}>{c.sub}</div>
                       </div>
-                      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                        {thumbSlots.map((ad, i) => ad ? <AdThumb key={ad.id} ad={ad} /> : <EmptyThumb key={i} />)}
-                      </div>
+                      {platform === "meta" && (
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          {thumbSlots.map((ad, i) => ad ? <AdThumb key={ad.id} ad={ad} /> : <EmptyThumb key={i} />)}
+                        </div>
+                      )}
                       <div style={{ textAlign: "right", fontSize: 12, color: "#C0C0D8", ...mono }}>{c.spend > 0 ? c.spend.toLocaleString("ro-RO") + " L" : "—"}</div>
                       <div style={{ textAlign: "right", fontSize: 12, color: "#C0C0D8", ...mono }}>{c.revenue > 0 ? c.revenue.toLocaleString("ro-RO") + " L" : "—"}</div>
                       <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: getRoasColor(c.roas), ...mono }}>{c.roas > 0 ? c.roas + "x" : "—"}</div>
@@ -457,9 +462,11 @@ export default function Dashboard() {
                       <div style={{ textAlign: "center" }}>
                         <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#12122A", color: "#7070A0", border: "1px solid #1E1E3A" }}>{fmtBid(c.bidStrategy)}</span>
                       </div>
-                      <div style={{ textAlign: "center" }}>
-                        <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#12122A", color: "#7070A0", border: "1px solid #1E1E3A", ...mono }}>{fmtAttribution(c.attribution)}</span>
-                      </div>
+                      {platform === "meta" && (
+                        <div style={{ textAlign: "center" }}>
+                          <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#12122A", color: "#7070A0", border: "1px solid #1E1E3A", ...mono }}>{fmtAttribution(c.attribution)}</span>
+                        </div>
+                      )}
                       <div style={{ textAlign: "right" }}>
                         <span style={{ fontSize: 10, fontWeight: 500, padding: "3px 8px", borderRadius: 4, background: bs.bg, color: bs.color, whiteSpace: "nowrap" }}>{st.label}</span>
                       </div>

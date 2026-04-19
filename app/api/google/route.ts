@@ -58,7 +58,6 @@ export async function GET(request: Request) {
   try {
     const accessToken = await getAccessToken();
 
-    // Google Ads Query Language (GAQL)
     const query = `
       SELECT
         campaign.id,
@@ -89,10 +88,16 @@ export async function GET(request: Request) {
       }
     );
 
-    const data = await res.json();
+    const text = await res.text();
+    let data: any;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON from Google", raw: text.slice(0, 1000) }, { status: 400 });
+    }
 
     if (data.error) {
-      return NextResponse.json({ error: data.error.message || JSON.stringify(data.error) }, { status: 400 });
+      return NextResponse.json({ error: data.error.message || JSON.stringify(data.error), details: data }, { status: 400 });
     }
 
     const campaigns = (data.results || []).map((row: any) => {
