@@ -158,7 +158,23 @@ export default function Dashboard() {
   const [sortKey, setSortKey] = useState<SortKey>("spend");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [plannedDailyBudget, setPlannedDailyBudget] = useState<string>("");
+  const [plannedBudgetDate, setPlannedBudgetDate] = useState<string>("");
   const [editingBudget, setEditingBudget] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem("plannedDailyBudget");
+    const savedDate = localStorage.getItem("plannedBudgetDate");
+    if (saved) setPlannedDailyBudget(saved);
+    if (savedDate) setPlannedBudgetDate(savedDate);
+  }, []);
+
+  function savePlannedBudget(value: string) {
+    setEditingBudget(false);
+    localStorage.setItem("plannedDailyBudget", value);
+    const now = new Date().toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    setPlannedBudgetDate(now);
+    localStorage.setItem("plannedBudgetDate", now);
+  }
   const menuRef = useRef<HTMLDivElement>(null);
 
   const activePeriodLabel = PERIODS.find(p => p.key === period)?.label || "Personalizat";
@@ -394,10 +410,15 @@ export default function Dashboard() {
                   Buget mediu zilnic planificat <span style={{ color: "#6366f1", fontSize: 9 }}>✎ editabil</span>
                 </div>
                 {editingBudget ? (
-                  <input autoFocus type="number" value={plannedDailyBudget} onChange={e => setPlannedDailyBudget(e.target.value)} onBlur={() => setEditingBudget(false)} onKeyDown={e => e.key === "Enter" && setEditingBudget(false)} placeholder="ex: 1500" style={{ background: "transparent", border: "none", borderBottom: "1px solid #6366f1", color: "#E8E8F0", fontSize: 18, fontWeight: 600, ...mono, outline: "none", width: "100%", padding: "0 0 2px 0" }} />
+                  <input autoFocus type="number" value={plannedDailyBudget} onChange={e => setPlannedDailyBudget(e.target.value)} onBlur={() => savePlannedBudget(plannedDailyBudget)} onKeyDown={e => e.key === "Enter" && savePlannedBudget(plannedDailyBudget)} placeholder="ex: 1500" style={{ background: "transparent", border: "none", borderBottom: "1px solid #6366f1", color: "#E8E8F0", fontSize: 18, fontWeight: 600, ...mono, outline: "none", width: "100%", padding: "0 0 2px 0" }} />
                 ) : (
                   <div style={{ fontSize: 18, fontWeight: 600, color: plannedDailyBudget ? "#A5B4FC" : "#2A2A4A", ...mono }}>
-                    {plannedDailyBudget ? `${parseInt(plannedDailyBudget).toLocaleString("ro-RO")} lei` : "click pentru a seta..."}
+                    {plannedDailyBudget ? (
+                      <>
+                        <span>{parseInt(plannedDailyBudget).toLocaleString("ro-RO")} lei</span>
+                        {plannedBudgetDate && <span style={{ fontSize: 10, color: "#4A4A6A", marginLeft: 8, fontFamily: "inherit", fontWeight: 400 }}>actualizat {plannedBudgetDate}</span>}
+                      </>
+                    ) : "click pentru a seta..."}
                   </div>
                 )}
               </div>
