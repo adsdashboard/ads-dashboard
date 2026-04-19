@@ -744,6 +744,36 @@ export default function Dashboard() {
               ))}
             </div>
 
+            {/* Summary row */}
+            {(() => {
+              const rowSpend = sorted.reduce((s, c) => s + c.spend, 0);
+              const rowRevenue = sorted.reduce((s, c) => s + c.revenue, 0);
+              const rowRoas = rowSpend > 0 ? Math.round((rowRevenue / rowSpend) * 10) / 10 : 0;
+              const rowPurchases = platform === "meta" ? sorted.reduce((s, c) => s + (c.purchases ?? 0), 0) : 0;
+              const roasColor = rowRoas >= 5 ? "#4ADE80" : rowRoas >= 4 ? "#FBB024" : rowRoas > 0 ? "#F87171" : "#6B6B8A";
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 20, padding: "7px 12px", marginBottom: 6, background: "#0A0A14", border: "1px solid #16162A", borderRadius: 7, fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
+                  <span style={{ color: "#4A4A6A" }}>
+                    {sorted.length === campaigns.length
+                      ? `${sorted.length} campanii`
+                      : `${sorted.length} din ${campaigns.length} campanii`}
+                  </span>
+                  <span style={{ color: "#2A2A3A" }}>·</span>
+                  <span style={{ color: "#7070A0" }}>cheltuit <span style={{ color: "#C0C0D8" }}>{rowSpend.toLocaleString("ro-RO")} lei</span></span>
+                  <span style={{ color: "#2A2A3A" }}>·</span>
+                  <span style={{ color: "#7070A0" }}>venituri <span style={{ color: "#C0C0D8" }}>{rowRevenue.toLocaleString("ro-RO")} lei</span></span>
+                  <span style={{ color: "#2A2A3A" }}>·</span>
+                  <span style={{ color: "#7070A0" }}>ROAS <span style={{ color: roasColor, fontWeight: 600 }}>{rowRoas > 0 ? rowRoas + "x" : "—"}</span></span>
+                  {platform === "meta" && rowPurchases > 0 && (
+                    <>
+                      <span style={{ color: "#2A2A3A" }}>·</span>
+                      <span style={{ color: "#7070A0" }}>purchases <span style={{ color: "#C0C0D8" }}>{rowPurchases.toLocaleString("ro-RO")}</span></span>
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* Table */}
             <div style={{ width: "100%", overflowX: "auto" }}>
               <div style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "0 10px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", minWidth: platform === "meta" ? 1400 : 900 }}>
