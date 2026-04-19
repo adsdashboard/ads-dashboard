@@ -190,6 +190,97 @@ function ActionModal({ campaign, action, onConfirm, onCancel }: {
   );
 }
 
+type ScalingSuggestion = {
+  dailyBudget: number | null;
+  suggestedBudget: number | null;
+  finalPercent: number;
+  roasNote: string;
+  ageNote: string;
+  hasBudget: boolean;
+};
+
+function ScaleModal({ campaign, onConfirm, onCancel }: {
+  campaign: Campaign;
+  onConfirm: (newBudget: number | null) => void;
+  onCancel: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [suggestion, setSuggestion] = useState<ScalingSuggestion | null>(null);
+  const [inputBudget, setInputBudget] = useState("");
+  const cfg = ACTION_CONFIG.scale;
+
+  useEffect(() => {
+    fetch(`/api/meta/update-budget?campaignId=${campaign.id}&roas=${campaign.roas}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { setError(data.error); setLoading(false); return; }
+        setSuggestion(data);
+        if (data.suggestedBudget) setInputBudget(String(data.suggestedBudget));
+        setLoading(false);
+      })
+      .catch(e => { setError(e.message); setLoading(false); });
+  }, [campaign.id, campaign.roas]);
+
+  const newBudget = parseFloat(inputBudget) || null;
+
+  return (
+    <div onClick={onCancel} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "#0F0F1A", border: "1px solid #2A2A4A", borderRadius: 12, padding: "24px 28px", maxWidth: 460, width: "90%", boxShadow: "0 16px 48px rgba(0,0,0,0.8)" }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#4ADE80", marginBottom: 4 }}>↑ Sugestie scalare</div>
+        <div style={{ fontSize: 11, color: "#4A4A6A", marginBottom: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={campaign.name}>{campaign.name}</div>
+
+        {loading && <div style={{ textAlign: "center", padding: "24px 0", color: "#6B6B8A", fontSize: 12 }}>Se calculează sugestia...</div>}
+        {error && <div style={{ color: "#F87171", fontSize: 12, marginBottom: 16 }}>{error}</div>}
+
+        {!loading && suggestion && (
+          <>
+            <div style={{ background: "#0A2218", border: "1px solid #4ADE8022", borderRadius: 8, padding: "12px 14px", marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: "#4ADE80", fontWeight: 600, marginBottom: 3 }}>{suggestion.roasNote}</div>
+              <div style={{ fontSize: 11, color: "#86EFAC", marginBottom: 6 }}>{suggestion.ageNote}</div>
+              <div style={{ fontSize: 13, color: "#4ADE80", fontWeight: 700 }}>Scalare sugerată: +{suggestion.finalPercent}%</div>
+            </div>
+
+            {suggestion.hasBudget ? (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 10, fontSize: 11, color: "#6B6B8A" }}>
+                  <span>Buget curent: <span style={{ color: "#C0C0D8", fontFamily: "monospace" }}>{suggestion.dailyBudget?.toLocaleString("ro-RO")} lei/zi</span></span>
+                  <span>Sugestie: <span style={{ color: "#4ADE80", fontFamily: "monospace" }}>{suggestion.suggestedBudget?.toLocaleString("ro-RO")} lei/zi</span></span>
+                </div>
+                <div style={{ fontSize: 11, color: "#6B6B8A", marginBottom: 6 }}>Buget nou <span style={{ color: "#3A3A5C" }}>(editabil)</span></div>
+                <input
+                  type="number"
+                  value={inputBudget}
+                  onChange={e => setInputBudget(e.target.value)}
+                  style={{ width: "100%", background: "#0A1A10", border: "1px solid #4ADE8040", borderRadius: 7, color: "#4ADE80", padding: "9px 12px", fontSize: 16, fontWeight: 700, fontFamily: "monospace", outline: "none", boxSizing: "border-box" }}
+                />
+                <div style={{ fontSize: 10, color: "#2E2E4A", marginTop: 4 }}>lei/zi · modifică dacă dorești altă valoare</div>
+              </div>
+            ) : (
+              <div style={{ background: "#1A1A2E", borderRadius: 8, padding: "10px 14px", marginBottom: 16, fontSize: 11, color: "#7070A0", lineHeight: 1.6 }}>
+                Bugetul e setat la nivel de ad set — nu poate fi modificat automat. Decizia va fi înregistrată local.
+              </div>
+            )}
+          </>
+        )}
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button onClick={onCancel} style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #2A2A4A", background: "transparent", color: "#9090B0", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+            Anulează
+          </button>
+          <button
+            onClick={() => suggestion && onConfirm(suggestion.hasBudget ? newBudget : null)}
+            disabled={loading || !!error}
+            style={{ padding: "7px 16px", borderRadius: 7, border: `1px solid ${cfg.border}`, background: (loading || !!error) ? "#0A1A10" : cfg.bg, color: (loading || !!error) ? "#2E4A30" : cfg.color, fontSize: 12, cursor: (loading || !!error) ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 600 }}
+          >
+            {suggestion?.hasBudget ? "Aplică bugetul" : "Înregistrează decizia"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [platform, setPlatform] = useState<Platform>("meta");
   const [period, setPeriod] = useState("prev7");
@@ -217,6 +308,7 @@ export default function Dashboard() {
 
   const [campaignActions, setCampaignActions] = useState<Record<string, CampaignActionRecord>>({});
   const [modal, setModal] = useState<{ campaign: Campaign; action: ActionType } | null>(null);
+  const [scaleModal, setScaleModal] = useState<Campaign | null>(null);
 
   useEffect(() => {
     const saved = localStorage.getItem("plannedDailyBudget");
@@ -236,12 +328,28 @@ export default function Dashboard() {
     localStorage.setItem("plannedBudgetDate", now);
   }
 
-  function confirmAction(campaignId: string, action: ActionType) {
+  function recordAction(campaignId: string, action: ActionType) {
     const record: CampaignActionRecord = { action, date: new Date().toISOString() };
     const updated = { ...campaignActions, [campaignId]: record };
     setCampaignActions(updated);
     localStorage.setItem(LS_ACTIONS_KEY, JSON.stringify(updated));
+  }
+
+  function confirmAction(campaignId: string, action: ActionType) {
+    recordAction(campaignId, action);
     setModal(null);
+  }
+
+  async function confirmScale(campaign: Campaign, newBudget: number | null) {
+    recordAction(campaign.id, "scale");
+    if (newBudget !== null) {
+      await fetch("/api/meta/update-budget", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId: campaign.id, newBudget }),
+      });
+    }
+    setScaleModal(null);
   }
 
   function getCooldownDaysLeft(campaignId: string): number {
@@ -407,6 +515,13 @@ export default function Dashboard() {
           onCancel={() => setModal(null)}
         />
       )}
+      {scaleModal && (
+        <ScaleModal
+          campaign={scaleModal}
+          onConfirm={(newBudget) => confirmScale(scaleModal, newBudget)}
+          onCancel={() => setScaleModal(null)}
+        />
+      )}
 
       {/* Header */}
       <div style={{ borderBottom: "1px solid #1E1E2E", padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
@@ -565,7 +680,7 @@ export default function Dashboard() {
                               <button
                                 key={act}
                                 disabled={disabled}
-                                onClick={() => !disabled && setModal({ campaign: c, action: act })}
+                                onClick={() => !disabled && (act === "scale" ? setScaleModal(c) : setModal({ campaign: c, action: act }))}
                                 title={disabled ? `Cooldown: mai ai ${daysLeft} ${daysLeft === 1 ? "zi" : "zile"}` : cfg.label}
                                 style={{
                                   padding: "2px 8px",
