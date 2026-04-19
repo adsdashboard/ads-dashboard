@@ -16,13 +16,13 @@ const PERIODS = [
 type Ad = { id: string; name: string; spend: number; roas: number; thumbnail: string | null; permalink: string | null };
 type Campaign = {
   id: string; name: string; sub: string;
-  spend: number; revenue: number; roas: number;
+  spend: number; revenue: number; roas: number; purchases: number;
   status: string; objective: string | null;
   bidStrategy: string | null; attribution: string | null;
   ads: Ad[];
   platform?: string;
 };
-type SortKey = "name" | "spend" | "revenue" | "roas" | "objective" | "bidStrategy" | "attribution" | "status";
+type SortKey = "name" | "spend" | "revenue" | "roas" | "purchases" | "objective" | "bidStrategy" | "attribution" | "status";
 type SortDir = "asc" | "desc";
 type Platform = "meta" | "google";
 
@@ -85,6 +85,7 @@ function sortCampaigns(campaigns: Campaign[], key: SortKey, dir: SortDir): Campa
       case "spend":       av = a.spend; bv = b.spend; break;
       case "revenue":     av = a.revenue; bv = b.revenue; break;
       case "roas":        av = a.roas; bv = b.roas; break;
+      case "purchases":   av = a.purchases ?? 0; bv = b.purchases ?? 0; break;
       case "objective":   av = a.objective || ""; bv = b.objective || ""; break;
       case "bidStrategy": av = a.bidStrategy || ""; bv = b.bidStrategy || ""; break;
       case "attribution": av = a.attribution || ""; bv = b.attribution || ""; break;
@@ -305,7 +306,7 @@ export default function Dashboard() {
   const diffLabel = diff > 0 ? `+${diff.toLocaleString("ro-RO")} lei peste plan` : diff < 0 ? `${diff.toLocaleString("ro-RO")} lei sub plan` : "conform planului";
 
   const COL = platform === "meta"
-    ? "minmax(0,2fr) 300px minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,110px) minmax(0,110px) minmax(0,100px) minmax(0,100px)"
+    ? "minmax(0,2fr) 300px minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,80px) minmax(0,110px) minmax(0,110px) minmax(0,100px) minmax(0,100px)"
     : "minmax(0,2fr) minmax(0,90px) minmax(0,100px) minmax(0,70px) minmax(0,110px) minmax(0,110px) minmax(0,100px)";
 
   const mono = { fontFamily: "'DM Mono', monospace" } as const;
@@ -446,19 +447,20 @@ export default function Dashboard() {
 
             {/* Table */}
             <div style={{ width: "100%", overflowX: "auto" }}>
-              <div style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "0 10px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", minWidth: platform === "meta" ? 1200 : 900 }}>
+              <div style={{ display: "grid", gridTemplateColumns: COL, gap: 8, padding: "0 10px 7px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.06em", minWidth: platform === "meta" ? 1300 : 900 }}>
                 <ColHeader label="Campanie" k="name" align="left" />
                 {platform === "meta" && <div style={{ color: "#4A4A6A" }}>Top 5 creative</div>}
                 <ColHeader label="Cheltuit" k="spend" align="right" />
                 <ColHeader label="Venituri" k="revenue" align="right" />
                 <ColHeader label="ROAS" k="roas" align="right" />
+                {platform === "meta" && <ColHeader label="Purchases" k="purchases" align="right" />}
                 <ColHeader label="Obiectiv" k="objective" align="center" />
                 <ColHeader label="Bid strategy" k="bidStrategy" align="center" />
                 {platform === "meta" && <ColHeader label="Attribution" k="attribution" align="center" />}
                 <ColHeader label="Status" k="status" align="right" />
               </div>
 
-              <div style={{ minWidth: platform === "meta" ? 1200 : 900 }}>
+              <div style={{ minWidth: platform === "meta" ? 1300 : 900 }}>
                 {sorted.map(c => {
                   const st = getStatus(c.roas, c.status);
                   const bs = badgeStyle(st.cls);
@@ -477,6 +479,7 @@ export default function Dashboard() {
                       <div style={{ textAlign: "right", fontSize: 12, color: "#C0C0D8", ...mono }}>{c.spend > 0 ? c.spend.toLocaleString("ro-RO") + " L" : "—"}</div>
                       <div style={{ textAlign: "right", fontSize: 12, color: "#C0C0D8", ...mono }}>{c.revenue > 0 ? c.revenue.toLocaleString("ro-RO") + " L" : "—"}</div>
                       <div style={{ textAlign: "right", fontSize: 13, fontWeight: 600, color: getRoasColor(c.roas), ...mono }}>{c.roas > 0 ? c.roas + "x" : "—"}</div>
+                      {platform === "meta" && <div style={{ textAlign: "right", fontSize: 12, color: "#C0C0D8", ...mono }}>{(c.purchases ?? 0) > 0 ? (c.purchases).toLocaleString("ro-RO") : "—"}</div>}
                       <div style={{ textAlign: "center" }}>
                         <span style={{ fontSize: 10, padding: "2px 7px", borderRadius: 4, background: "#12122A", color: "#7070A0", border: "1px solid #1E1E3A" }}>{fmtObjective(c.objective)}</span>
                       </div>

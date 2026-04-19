@@ -74,7 +74,7 @@ export async function GET(request: Request) {
 
     // Fetch all insights with pagination
     const insightsUrl = new URL(`https://graph.facebook.com/v19.0/act_${AD_ACCOUNT_ID}/insights`);
-    insightsUrl.searchParams.set("fields", "campaign_id,spend,purchase_roas,attribution_setting");
+    insightsUrl.searchParams.set("fields", "campaign_id,spend,purchase_roas,attribution_setting,actions");
     insightsUrl.searchParams.set("level", "campaign");
     insightsUrl.searchParams.set("time_range", timeRange);
     insightsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
@@ -103,6 +103,8 @@ export async function GET(request: Request) {
         const roas = roasArr ? parseFloat(roasArr[0]?.value || "0") : 0;
         const revenue = spend * roas;
         const attribution = ins?.attribution_setting || null;
+        const purchaseAction = (ins?.actions || []).find((a: any) => a.action_type === "offsite_conversion.fb_pixel_purchase" || a.action_type === "purchase");
+        const purchases = purchaseAction ? parseInt(purchaseAction.value || "0", 10) : 0;
 
         let ads: any[] = [];
         try {
@@ -143,6 +145,7 @@ export async function GET(request: Request) {
           spend: Math.round(spend),
           revenue: Math.round(revenue),
           roas: Math.round(roas * 10) / 10,
+          purchases,
           status: c.status,
           objective: c.objective || null,
           bidStrategy: c.bid_strategy || null,
