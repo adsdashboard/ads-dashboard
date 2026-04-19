@@ -109,7 +109,7 @@ export async function GET(request: Request) {
           // Only fetch ads for campaigns with spend > 0
           if (spend > 0) {
             const adsUrl = new URL(`https://graph.facebook.com/v19.0/${c.id}/ads`);
-            adsUrl.searchParams.set("fields", "id,name,creative{thumbnail_url,image_url,object_story_id},insights{spend,purchase_roas}");
+            adsUrl.searchParams.set("fields", `id,name,creative{thumbnail_url,image_url,object_story_id},insights.time_range(${timeRange}){spend,purchase_roas}`);
             adsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
             adsUrl.searchParams.set("limit", "10");
             adsUrl.searchParams.set("time_range", timeRange);
