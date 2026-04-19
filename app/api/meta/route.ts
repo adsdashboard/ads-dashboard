@@ -44,7 +44,7 @@ async function fetchAllPages(initialUrl: URL): Promise<{ data: any[]; error?: an
   let nextUrl: string | null = initialUrl.toString();
 
   while (nextUrl) {
-    const res = await fetch(nextUrl);
+    const res: Response = await fetch(nextUrl);
     const json = await res.json();
     if (json.error) return { data: allData, error: json.error };
     allData.push(...(json.data || []));
