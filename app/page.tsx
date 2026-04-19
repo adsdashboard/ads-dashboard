@@ -13,6 +13,8 @@ const PERIODS = [
   { label: "Luna trecută", key: "last_month" },
 ];
 
+const CATEGORIES = ["Glezne", "Negre lungi", "Antibacteriene", "Esentiale", "Personalizate", "Dresuri", "Talpici", "Lana", "Ski"];
+
 type Ad = { id: string; name: string; spend: number; roas: number; thumbnail: string | null; permalink: string | null };
 type Campaign = {
   id: string; name: string; sub: string;
@@ -362,6 +364,108 @@ function StopModal({ campaign, onConfirm, onCancel }: {
   );
 }
 
+// ── Launch CT Modal ───────────────────────────────────────────────────────────
+
+function LaunchCTModal({ onSuccess, onCancel }: { onSuccess: () => void; onCancel: () => void }) {
+  const [postLink,     setPostLink]     = useState("");
+  const [creativeName, setCreativeName] = useState("");
+  const [category,     setCategory]     = useState(CATEGORIES[0]);
+  const [landingUrl,   setLandingUrl]   = useState("");
+  const [dailyBudget,  setDailyBudget]  = useState("100");
+  const [loading,      setLoading]      = useState(false);
+  const [error,        setError]        = useState("");
+  const [result,       setResult]       = useState<{ campaignName: string } | null>(null);
+
+  async function handleSubmit() {
+    if (!postLink.trim() || !creativeName.trim() || !landingUrl.trim()) {
+      setError("Completează toate câmpurile marcate cu *."); return;
+    }
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/meta/create-ct", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postLink, creativeName, category, landingUrl, dailyBudget: parseFloat(dailyBudget) || 100 }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setLoading(false); return; }
+      setResult({ campaignName: data.campaignName });
+      setLoading(false);
+    } catch (e: any) { setError(e.message); setLoading(false); }
+  }
+
+  const inp: React.CSSProperties = { width: "100%", background: "#0A0A14", border: "1px solid #2A2A4A", borderRadius: 7, color: "#E8E8F0", padding: "8px 12px", fontSize: 12, fontFamily: "inherit", outline: "none", boxSizing: "border-box" };
+  const lbl: React.CSSProperties = { fontSize: 10, color: "#6B6B8A", marginBottom: 5, textTransform: "uppercase", letterSpacing: "0.06em", display: "block" };
+
+  if (result) return (
+    <div style={overlayStyle}>
+      <div onClick={e => e.stopPropagation()} style={{ ...cardStyle, maxWidth: 500 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#4ADE80", marginBottom: 10 }}>✓ Creative Test lansat!</div>
+        <div style={{ fontSize: 11, color: "#6B6B8A", marginBottom: 8 }}>Campanie creată în Meta Ads:</div>
+        <div style={{ padding: "10px 14px", background: "#0A2218", border: "1px solid #4ADE8022", borderRadius: 7, fontSize: 11, color: "#86EFAC", fontFamily: "monospace", marginBottom: 20, wordBreak: "break-all", lineHeight: 1.6 }}>
+          {result.campaignName}
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <button onClick={onSuccess} style={{ padding: "7px 20px", borderRadius: 7, border: "1px solid #4ADE8040", background: "#0A2E1E", color: "#4ADE80", fontSize: 12, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+            Vezi în dashboard →
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div onClick={onCancel} style={overlayStyle}>
+      <div onClick={e => e.stopPropagation()} style={{ ...cardStyle, maxWidth: 500 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: "#A5B4FC", marginBottom: 18 }}>🚀 Lansează Creative Test</div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+          <div>
+            <label style={lbl}>Link postare Facebook *</label>
+            <input value={postLink} onChange={e => setPostLink(e.target.value)} placeholder="https://www.facebook.com/..." style={inp} />
+            <div style={{ fontSize: 10, color: "#3A3A5C", marginTop: 4 }}>Funcționează cu postări FB; pentru Instagram folosește versiunea cross-postată pe pagina FB.</div>
+          </div>
+          <div>
+            <label style={lbl}>Nume creativ *</label>
+            <input value={creativeName} onChange={e => setCreativeName(e.target.value)} placeholder="ex: Glezne_GriDeschis_Video1" style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Categorie *</label>
+            <select value={category} onChange={e => setCategory(e.target.value)} style={{ ...inp, appearance: "none" as any, cursor: "pointer" }}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>URL landing page *</label>
+            <input value={landingUrl} onChange={e => setLandingUrl(e.target.value)} placeholder="https://..." style={inp} />
+          </div>
+          <div>
+            <label style={lbl}>Buget zilnic (lei)</label>
+            <input type="number" value={dailyBudget} onChange={e => setDailyBudget(e.target.value)} min="1" style={{ ...inp, fontFamily: "monospace", fontWeight: 600, color: "#A5B4FC" }} />
+          </div>
+        </div>
+
+        {error && (
+          <div style={{ marginTop: 14, fontSize: 11, color: "#F87171", background: "#1A0505", border: "1px solid #F8717130", borderRadius: 6, padding: "9px 12px", lineHeight: 1.6 }}>{error}</div>
+        )}
+
+        <div style={{ marginTop: 16, padding: "8px 12px", background: "#0F0F1A", border: "1px solid #1E1E2E", borderRadius: 6, fontSize: 10, color: "#4A4A6A", lineHeight: 1.7 }}>
+          Va crea automat: campanie <span style={{ color: "#6B6B8A" }}>[CT] LS / {category} / {creativeName || "…"} / Auto / NO / HP / {new Date().toLocaleDateString("ro-RO", { day: "2-digit", month: "2-digit", year: "2-digit" }).replace(/\//g, ".")}</span>
+          {" · "}ad set RO Broad Advantage+ ABO {dailyBudget} lei/zi
+          {" · "}ad cu CTA Shop Now
+        </div>
+
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18 }}>
+          <button onClick={onCancel} style={{ padding: "7px 16px", borderRadius: 7, border: "1px solid #2A2A4A", background: "transparent", color: "#9090B0", fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Anulează</button>
+          <button onClick={handleSubmit} disabled={loading} style={{ padding: "7px 20px", borderRadius: 7, border: "1px solid #6366f140", background: loading ? "#12121E" : "#1A1A3A", color: loading ? "#4A4A6A" : "#A5B4FC", fontSize: 12, cursor: loading ? "not-allowed" : "pointer", fontFamily: "inherit", fontWeight: 600 }}>
+            {loading ? "Se lansează..." : "🚀 Lansează CT"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -395,6 +499,8 @@ export default function Dashboard() {
   const [stopModal, setStopModal] = useState<Campaign | null>(null);
   const [unlockedAt, setUnlockedAt] = useState<Record<string, number>>({});
   const [, setTick] = useState(0);
+  const [showLaunchModal, setShowLaunchModal] = useState(false);
+  const [showCTSection, setShowCTSection] = useState(true);
 
   useEffect(() => {
     const id = setInterval(() => setTick(t => t + 1), 1000);
@@ -592,6 +698,7 @@ export default function Dashboard() {
   const isActive = (c: Campaign) => c.status === "ACTIVE" || c.status === "ENABLED";
   const activeCamps = campaigns.filter(isActive);
   const scalabile = campaigns.filter(c => c.roas >= 5);
+  const ctCampaigns = platform === "meta" ? metaCampaigns.filter(c => c.name.startsWith("[CT]")) : [];
 
   const filtered = campaigns.filter(c => {
     if (filter === "active") return isActive(c);
@@ -627,6 +734,12 @@ export default function Dashboard() {
     <main style={{ fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", background: "#0A0A0F", color: "#E8E8F0", boxSizing: "border-box" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
+      {showLaunchModal && (
+        <LaunchCTModal
+          onSuccess={() => { setShowLaunchModal(false); fetchMeta(period); }}
+          onCancel={() => setShowLaunchModal(false)}
+        />
+      )}
       {scaleModal  && <ScaleModal  campaign={scaleModal}  onConfirm={(b)        => confirmScale(scaleModal, b)}           onCancel={() => setScaleModal(null)}  />}
       {reduceModal && <ReduceModal campaign={reduceModal} onConfirm={(b, act)   => confirmReduce(reduceModal, b, act)}     onCancel={() => setReduceModal(null)} />}
       {stopModal   && <StopModal   campaign={stopModal}   onConfirm={()         => confirmStop(stopModal)}                 onCancel={() => setStopModal(null)}   />}
@@ -735,13 +848,62 @@ export default function Dashboard() {
               </div>
             )}
 
+            {/* Creative Testing panel */}
+            {ctCampaigns.length > 0 && (
+              <div style={{ marginBottom: 14, background: "#0A0A14", border: "1px solid #1E1E3A", borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderBottom: showCTSection ? "1px solid #1A1A2E" : "none", cursor: "pointer" }} onClick={() => setShowCTSection(v => !v)}>
+                  <span style={{ fontSize: 10, fontWeight: 700, color: "#A5B4FC", textTransform: "uppercase", letterSpacing: "0.08em" }}>Creative Testing</span>
+                  <span style={{ fontSize: 10, padding: "1px 7px", borderRadius: 10, background: "#1E1E3A", color: "#6B6B8A", fontFamily: "monospace" }}>{ctCampaigns.length}</span>
+                  <button onClick={e => { e.stopPropagation(); setShowLaunchModal(true); }} style={{ marginLeft: "auto", padding: "3px 10px", borderRadius: 6, border: "1px solid #6366f140", background: "#1A1A3A", color: "#A5B4FC", fontSize: 10, cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>🚀 Lansează CT</button>
+                  <span style={{ fontSize: 9, color: "#3A3A5C" }}>{showCTSection ? "▲" : "▼"}</span>
+                </div>
+                {showCTSection && (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 8, padding: "10px 12px" }}>
+                    {ctCampaigns.map(c => {
+                      const parts = c.name.replace(/^\[CT\] LS \/ /, "").split(" / ");
+                      const cat  = parts[0] || "";
+                      const cname = parts[1] || c.name;
+                      const date  = parts[parts.length - 1] || "";
+                      const thumb = c.ads[0]?.thumbnail || null;
+                      const active = c.status === "ACTIVE";
+                      return (
+                        <div key={c.id} style={{ background: "#0D0D1A", border: "1px solid #16162A", borderRadius: 8, padding: "10px 12px", display: "flex", gap: 10, alignItems: "flex-start" }}>
+                          {thumb
+                            ? <img src={thumb} alt="" style={{ width: 52, height: 52, borderRadius: 6, objectFit: "cover", flexShrink: 0 }} />
+                            : <div style={{ width: 52, height: 52, borderRadius: 6, background: "#1A1A2E", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, color: "#3A3A5C" }}>▶</div>
+                          }
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 9, padding: "1px 6px", borderRadius: 3, background: "#1E1E3A", color: "#A5B4FC" }}>{cat}</span>
+                              <span style={{ fontSize: 9, color: "#3A3A5C", fontFamily: "monospace" }}>{date}</span>
+                              <span style={{ marginLeft: "auto", fontSize: 9, padding: "1px 5px", borderRadius: 3, background: active ? "#0F3D2E" : "#1A1A2E", color: active ? "#4ADE80" : "#4A4A6A" }}>{active ? "● activ" : "● pause"}</span>
+                            </div>
+                            <div style={{ fontSize: 11, fontWeight: 500, color: "#D0D0E8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginBottom: 5 }} title={cname}>{cname}</div>
+                            <div style={{ display: "flex", gap: 10, fontSize: 10, fontFamily: "monospace" }}>
+                              <span style={{ color: "#7070A0" }}>{c.spend > 0 ? c.spend.toLocaleString("ro-RO") + " L" : "—"}</span>
+                              {c.roas > 0 && <span style={{ color: getRoasColor(c.roas), fontWeight: 600 }}>{c.roas}x</span>}
+                              {(c.purchases ?? 0) > 0 && <span style={{ color: "#7070A0" }}>{c.purchases} purch.</span>}
+                              {c.dailyBudget && <span style={{ color: "#3A3A5C" }}>{c.dailyBudget} L/zi</span>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Filter */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12, alignItems: "center" }}>
               {(["active", "paused", "all"] as const).map(f => (
                 <button key={f} onClick={() => setFilter(f)} style={{ padding: "4px 12px", borderRadius: 12, border: "1px solid", borderColor: filter === f ? "#6366f1" : "#1E1E2E", background: filter === f ? "#6366f115" : "transparent", color: filter === f ? "#A5B4FC" : "#6B6B8A", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>
                   {f === "all" ? `Toate (${campaigns.length})` : f === "active" ? `Active (${activeCamps.length})` : `Paused (${campaigns.length - activeCamps.length})`}
                 </button>
               ))}
+              {platform === "meta" && ctCampaigns.length === 0 && (
+                <button onClick={() => setShowLaunchModal(true)} style={{ marginLeft: "auto", padding: "4px 12px", borderRadius: 12, border: "1px solid #6366f140", background: "#1A1A3A", color: "#A5B4FC", fontSize: 11, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>🚀 Lansează CT</button>
+              )}
             </div>
 
             {/* Summary row */}
