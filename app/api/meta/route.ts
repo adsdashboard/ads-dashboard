@@ -66,7 +66,6 @@ export async function GET(request: Request) {
     campsUrl.searchParams.set("fields", "id,name,status,objective,bid_strategy");
     campsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
     campsUrl.searchParams.set("limit", "200");
-    campsUrl.searchParams.set("filtering", JSON.stringify([{ field: "campaign.delivery_info", operator: "IN", value: ["active", "inactive", "paused", "completed"] }]));
     const { data: campsAll, error: campsError } = await fetchAllPages(campsUrl);
 
     if (campsError) {
