@@ -39,6 +39,21 @@ function buildPostUrl(objectStoryId: string | null, adId: string): string {
   return `https://www.facebook.com/ads/library/?id=${adId}`;
 }
 
+async function fetchAllPages(initialUrl: URL): Promise<{ data: any[]; error?: any }> {
+  const allData: any[] = [];
+  let nextUrl: string | null = initialUrl.toString();
+
+  while (nextUrl) {
+    const res = await fetch(nextUrl);
+    const json = await res.json();
+    if (json.error) return { data: allData, error: json.error };
+    allData.push(...(json.data || []));
+    nextUrl = json.paging?.next || null;
+  }
+
+  return { data: allData };
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const period = searchParams.get("period") || "prev7";
@@ -46,43 +61,43 @@ export async function GET(request: Request) {
   const timeRange = JSON.stringify({ since, until });
 
   try {
-    // Fetch campaigns — use filtering param to get only campaigns with spend in period
+    // Fetch all campaigns with pagination
     const campsUrl = new URL(`https://graph.facebook.com/v19.0/act_${AD_ACCOUNT_ID}/campaigns`);
     campsUrl.searchParams.set("fields", "id,name,status,objective,bid_strategy");
     campsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
-    campsUrl.searchParams.set("limit", "50");
-    // filtering ensures we only get campaigns active in the period
+    campsUrl.searchParams.set("limit", "200");
     campsUrl.searchParams.set("filtering", JSON.stringify([{ field: "campaign.delivery_info", operator: "IN", value: ["active", "inactive", "paused", "completed"] }]));
-    const campsRes = await fetch(campsUrl.toString());
-    const campsData = await campsRes.json();
+    const { data: campsAll, error: campsError } = await fetchAllPages(campsUrl);
 
-    if (campsData.error) {
-      return NextResponse.json({ error: campsData.error.message }, { status: 400 });
+    if (campsError) {
+      return NextResponse.json({ error: campsError.message }, { status: 400 });
     }
 
-    // Fetch insights separately with explicit time_range
+    // Fetch all insights with pagination
     const insightsUrl = new URL(`https://graph.facebook.com/v19.0/act_${AD_ACCOUNT_ID}/insights`);
     insightsUrl.searchParams.set("fields", "campaign_id,spend,purchase_roas,attribution_setting");
     insightsUrl.searchParams.set("level", "campaign");
     insightsUrl.searchParams.set("time_range", timeRange);
     insightsUrl.searchParams.set("access_token", ACCESS_TOKEN!);
-    insightsUrl.searchParams.set("limit", "100");
-    const insightsRes = await fetch(insightsUrl.toString());
-    const insightsData = await insightsRes.json();
+    insightsUrl.searchParams.set("limit", "200");
+    const { data: insightsAll, error: insightsError } = await fetchAllPages(insightsUrl);
 
-    if (insightsData.error) {
-      return NextResponse.json({ error: insightsData.error.message }, { status: 400 });
+    if (insightsError) {
+      return NextResponse.json({ error: insightsError.message }, { status: 400 });
     }
 
-    // Build insights map by campaign_id
+    // Build insights map by campaign_id — only keep campaigns that have spend > 0 in this period
     const insightsMap: Record<string, any> = {};
-    for (const row of insightsData.data || []) {
-      insightsMap[row.campaign_id] = row;
+    for (const row of insightsAll) {
+      if (parseFloat(row.spend || "0") > 0) insightsMap[row.campaign_id] = row;
     }
+
+    // Filter campaigns: only those with spend in this period OR currently active
+    const campsData = campsAll.filter(c => insightsMap[c.id] || c.status === "ACTIVE");
 
     // Fetch ads with thumbnails for campaigns that have spend
     const campaigns = await Promise.all(
-      (campsData.data || []).map(async (c: any) => {
+      campsData.map(async (c: any) => {
         const ins = insightsMap[c.id];
         const spend = parseFloat(ins?.spend || "0");
         const roasArr = ins?.purchase_roas;
@@ -138,7 +153,6 @@ export async function GET(request: Request) {
       })
     );
 
-    // Only include campaigns with spend > 0 in period OR active campaigns
     const relevantCampaigns = campaigns.filter(c => c.spend > 0 || c.status === "ACTIVE");
 
     const totalSpend = relevantCampaigns.reduce((s, c) => s + c.spend, 0);
